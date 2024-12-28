@@ -14,7 +14,7 @@
     "canvg": "^4.0.2",
     "express": "^4.21.2",
     "fabric": "^6.5.3",
-    "jsdom": "^25.0.1",
+    "jsdom": "^16.7.0",
     "katex": "^0.16.17",
     "mathjax-full": "^3.2.2",
     "mathjax-node": "^2.1.1",

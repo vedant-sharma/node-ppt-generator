@@ -1,21 +1,22 @@
-const fs = require('fs');
-const path = require('path');
 const PptxGenJS = require('pptxgenjs');
 const { createCanvas, loadImage } = require('canvas');
 const mathjax = require('mathjax-node');
 
-// Set MathJax configuration
 mathjax.start();
 
-// Convert LaTeX to SVG
+const MAX_IMAGE_WIDTH = 1.2;
+const MAX_IMAGE_HEIGHT = 0.4;
+const IMAGE_TEXT_SPACING = 0.1;
+const IMAGE_ADJUSTMENT_Y = -0.2;
+const LEFT_MARGIN = 1;
+const SLIDE_WIDTH = 10;
+const FONT_SIZE = 16;
+
+// Helper function to convert LaTeX to SVG
 function latexToSvg(latex) {
   return new Promise((resolve, reject) => {
     mathjax.typeset(
-      {
-        math: latex,
-        format: 'TeX', // Input LaTeX
-        svg: true,     // Output SVG
-      },
+      { math: latex, format: 'TeX', svg: true },
       (data) => {
         if (data.errors) {
           reject(`Error in LaTeX conversion: ${data.errors}`);
@@ -27,95 +28,120 @@ function latexToSvg(latex) {
   });
 }
 
-// Convert LaTeX to PNG and return the path
-async function latexToPng(latex, outputDir) {
-  try {
-    const svg = await latexToSvg(latex);
+// Helper function to convert LaTeX SVG to PNG byte stream
+async function latexToPngByteStream(latex) {
+  const svg = await latexToSvg(latex);
 
-    // Canvas setup
-    const canvas = createCanvas(300, 50); // Adjust size as needed
-    const context = canvas.getContext('2d');
-    const buffer = Buffer.from(svg, 'utf-8');
-    const image = await loadImage(buffer);
+  const canvas = createCanvas(500, 200);
+  const context = canvas.getContext('2d');
+  const buffer = Buffer.from(svg, 'utf-8');
+  const image = await loadImage(buffer);
 
-    context.drawImage(image, 0, 0);
-
-    const fileName = `equation_${Date.now()}.png`;
-    const filePath = path.join(outputDir, fileName);
-    const imageBuffer = canvas.toBuffer('image/png');
-    fs.writeFileSync(filePath, imageBuffer);
-
-    return filePath;
-  } catch (err) {
-    console.error('Error converting LaTeX to PNG:', err);
-    throw err;
-  }
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toBuffer('image/png');
 }
 
-// Process slide content
-async function processSlideContent(content, outputDir) {
-  const equationRegex = /\$(.*?)\$/g; // Matches LaTeX equations within '$...$'
-  let match;
-  const contentParts = [];
+// Helper function to process slide content and convert equations
+async function processSlideContent(content) {
+  const formulaRegex = /<span class="ql-custom-formula" data-value="(.*?)"><\/span>/g;
+  const parts = [];
   let lastIndex = 0;
+  let match;
 
-  while ((match = equationRegex.exec(content)) !== null) {
-    const latex = match[1]; // Extract LaTeX
+  while ((match = formulaRegex.exec(content)) !== null) {
     if (match.index > lastIndex) {
-      contentParts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
+      parts.push({ type: 'text', value: content.slice(lastIndex, match.index).trim() });
     }
 
-    const imagePath = await latexToPng(latex, outputDir);
-    contentParts.push({ type: 'image', value: imagePath });
+    const latex = match[1];
+    const imageBuffer = await latexToPngByteStream(latex);
+    parts.push({
+      type: 'image',
+      value: imageBuffer,
+      width: MAX_IMAGE_WIDTH,
+      height: MAX_IMAGE_HEIGHT,
+    });
 
-    lastIndex = equationRegex.lastIndex;
+    lastIndex = formulaRegex.lastIndex;
   }
 
   if (lastIndex < content.length) {
-    contentParts.push({ type: 'text', value: content.slice(lastIndex) });
+    parts.push({ type: 'text', value: content.slice(lastIndex).trim() });
   }
 
-  return contentParts;
+  return parts;
 }
 
-// Generate presentation with properly aligned content
+// Main function to generate PowerPoint
 async function generatePpt(req, res) {
-  const slidesData = [
-    { title: 'Slide 1', content: 'This is a math equation: $E=mc^2$ inline example.' },
-    { title: 'Slide 2', content: 'Solve: $x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}$ and see the inline placement.' },
-  ];
-
-  const outputDir = path.join(__dirname, 'output');
-  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+  const { slides, template } = {
+    slides: [
+      {
+        title: "Math Equation Demo",
+        sub_title: "An introduction to Einstein's famous formula",
+        content:
+          "Einstein said: <span class=\"ql-custom-formula\" data-value=\"E = mc^2\"></span> revolutionized physics.",
+      },
+      {
+        title: "Quadratic Formula",
+        sub_title: "Solving quadratic equations in algebra",
+        content:
+          "The formula is <span class=\"ql-custom-formula\" data-value=\"x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\"></span>. It is widely used in algebra.",
+      },
+    ],
+    template: {
+      image_path:
+        "https://prepaze-lms-store-production.s3-us-west-2.amazonaws.com/public/27/27/LYumW3FCjruHQD9mLbYi5e/slide_background2.jpeg",
+      font_family: "Verdana",
+    },
+  };
 
   const pptx = new PptxGenJS();
 
-  for (const slideData of slidesData) {
+  for (const slideData of slides) {
     const slide = pptx.addSlide();
-    slide.addText(slideData.title, { x: 1, y: 0.5, fontSize: 24, bold: true });
 
-    const processedContent = await processSlideContent(slideData.content, outputDir);
+    // Set background image from template
+    slide.background = { path: template.image_path };
 
-    let xPosition = 0.5;
-    const yPosition = 1.5; // Fixed y position for inline layout
+    // Add title
+    slide.addText(slideData.title, { x: 0.5, y: 0.5, fontSize: 24, bold: true, fontFace: template.font_family });
+
+    // Add subtitle
+    if (slideData.sub_title) {
+      slide.addText(slideData.sub_title, { x: 0.5, y: 1, fontSize: 18, fontFace: template.font_family, italic: true });
+    }
+
+    const processedContent = await processSlideContent(slideData.content);
+    let xPosition = LEFT_MARGIN;
+    let yPosition = slideData.sub_title ? 1.8 : 1.5;
 
     for (const part of processedContent) {
       if (part.type === 'text') {
-        const textWidth = 1.5 * (part.value.length / 10); // Estimate width based on text length
-        slide.addText(part.value, { x: xPosition, y: yPosition, fontSize: 16, color: '363636' });
-        xPosition += textWidth; // Increment x position
+        slide.addText(part.value, { x: xPosition, y: yPosition, fontSize: FONT_SIZE, fontFace: template.font_family });
+        xPosition += part.value.length * 0.1; // Estimate text width
       } else if (part.type === 'image') {
-        const imageWidth = 1.5; // Fixed width for image
-        slide.addImage({ path: part.value, x: xPosition, y: yPosition, w: imageWidth, h: 0.5 });
-        xPosition += imageWidth + 0.1; // Increment x position, adding small margin
+        slide.addImage({
+          data: `data:image/png;base64,${part.value.toString('base64')}`,
+          x: xPosition,
+          y: yPosition + IMAGE_ADJUSTMENT_Y,
+          w: part.width,
+          h: part.height,
+        });
+        xPosition += part.width + IMAGE_TEXT_SPACING;
+      }
+
+      if (xPosition > SLIDE_WIDTH - LEFT_MARGIN) {
+        xPosition = LEFT_MARGIN;
+        yPosition += 0.5;
       }
     }
   }
 
-  const outputFilePath = path.join(outputDir, 'Presentation.pptx');
+  const outputFilePath = 'GeneratedPresentation.pptx';
   await pptx.writeFile({ fileName: outputFilePath });
 
-  res.status(200).send(`PowerPoint saved to: ${outputFilePath}`);
+  res.status(200).send(`Presentation saved as ${outputFilePath}`);
 }
 
 module.exports = { generatePpt };
