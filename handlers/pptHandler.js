@@ -4,6 +4,7 @@ const mathjax = require('mathjax-node');
 
 mathjax.start();
 
+// Constants for slide layout
 const MAX_IMAGE_WIDTH = 1.2;
 const MAX_IMAGE_HEIGHT = 0.4;
 const IMAGE_TEXT_SPACING = 0.1;
@@ -55,11 +56,14 @@ async function processSlideContent(content) {
 
     const latex = match[1];
     const imageBuffer = await latexToPngByteStream(latex);
+
+    // Determine size based on LaTeX length
+    const sizeMultiplier = latex.length > 15 ? 1 : 0.7; // Smaller size for shorter equations
     parts.push({
       type: 'image',
       value: imageBuffer,
-      width: MAX_IMAGE_WIDTH,
-      height: MAX_IMAGE_HEIGHT,
+      width: MAX_IMAGE_WIDTH * sizeMultiplier,
+      height: MAX_IMAGE_HEIGHT * sizeMultiplier,
     });
 
     lastIndex = formulaRegex.lastIndex;
@@ -123,7 +127,7 @@ async function generatePpt(req, res) {
       } else if (part.type === 'image') {
         slide.addImage({
           data: `data:image/png;base64,${part.value.toString('base64')}`,
-          x: xPosition,
+          x: xPosition + 0.4, // Add extra offset to the right
           y: yPosition + IMAGE_ADJUSTMENT_Y,
           w: part.width,
           h: part.height,
@@ -138,10 +142,12 @@ async function generatePpt(req, res) {
     }
   }
 
-  const outputFilePath = 'GeneratedPresentation.pptx';
-  await pptx.writeFile({ fileName: outputFilePath });
+  const buffer = await pptx.write("base64");
+  const responseBuffer = Buffer.from(buffer, "base64");
 
-  res.status(200).send(`Presentation saved as ${outputFilePath}`);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+  res.setHeader("Content-Disposition", "attachment; filename=GeneratedPresentation.pptx");
+  res.send(responseBuffer);
 }
 
 module.exports = { generatePpt };
