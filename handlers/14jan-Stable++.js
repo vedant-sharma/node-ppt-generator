@@ -260,7 +260,7 @@ const generatePpt = async (req, res) => {
                 align: "left",
               });
       
-              xPosition += wordWidth + 0.25;
+              xPosition += wordWidth + 0.20;
             }
           } else if (part.type === "image") {
             const imageWidth = part.width;
