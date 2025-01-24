@@ -3,6 +3,7 @@ const { JSDOM } = require("jsdom");
 const mjAPI = require("mathjax-node");
 const sharp = require("sharp");
 const { createCanvas } = require("canvas");
+const axios = require("axios");
 
 mjAPI.config({
   MathJax: {
@@ -14,11 +15,8 @@ mjAPI.config({
 mjAPI.start();
 
 // Constants for layout
-const MAX_IMAGE_WIDTH = 1.2;
-const MAX_IMAGE_HEIGHT = 0.6;
-const IMAGE_TEXT_SPACING = 0.1;
-const IMAGE_ADJUSTMENT_Y = -0.2;
-const LEFT_MARGIN = 0.5;
+const IMAGE_TEXT_SPACING = -0.1;
+const LEFT_MARGIN = 0.7;
 const SLIDE_WIDTH = 10;
 const FONT_SIZE = 16;
 
@@ -39,19 +37,26 @@ const processContent = (content) => {
   return document.body.innerHTML;
 };
 
+// Function to fetch an image from a URL and convert it to Base64
+const getBase64FromUrl = async (url) => {
+  const response = await axios.get(url, { responseType: "arraybuffer" });
+  const buffer = Buffer.from(response.data, "binary");
+  return `data:image/jpeg;base64,${buffer.toString("base64")}`;
+};
+
 /**
  * Determine dynamic scaling factor based on LaTeX complexity.
  */
 function getDynamicScalingFactor(latexCode) {
-  const baseScale = 4; // Default scale for simple equations
+  const baseScale = 5; // Default scale for simple equations
   const complexityMultiplier =
-  (latexCode.match(/\\(frac|sum|int|sqrt|prod)/g) || []).length || 0;
+    (latexCode.match(/\\(frac|sum|int|sqrt|prod)/g) || []).length || 0;
   const lengthMultiplier = Math.min(latexCode.length / 50, 2); // Scale more for longer equations
 
   const dynamicScale = baseScale + complexityMultiplier + lengthMultiplier;
 
   // Enforce a minimum scaling factor for short equations
-  const minScale = 6; // Minimum scale to ensure small equations are readable
+  const minScale = 100; // Minimum scale to ensure small equations are readable
   return Math.max(dynamicScale, minScale);
 }
 
@@ -73,14 +78,14 @@ async function latexToPngByteStream(latex) {
         math: latex,
         format: "TeX",
         svg: true,
-        scale: scale * 1.5, // High-resolution scale
+        scale: scale * 4, // High-resolution scale
       },
       (data) => {
         if (data.errors) {
           reject(data.errors);
         } else {
           sharp(Buffer.from(data.svg))
-            // .resize(1500) // High resolution (width in px)
+            // .resize(resizeValue) // High resolution (width in px)
             .png({ quality: 100, adaptiveFiltering: true, dpi: 300 })
             .toBuffer()
             .then((buffer) => resolve(buffer))
@@ -125,7 +130,7 @@ async function processSlideContent(content) {
       // Get image dimensions from PNG buffer
       const metadata = await sharp(imageBuffer).metadata();
       const imgWidth = metadata.width;
-      const imgHeight = metadata.height;
+      const imgHeight = Math.max(metadata.height, 24);
 
       // Calculate PowerPoint dimensions (inches, assuming 96 DPI)
       const pptxWidth = 10; // Default slide width
@@ -168,7 +173,6 @@ async function processSlideContent(content) {
 // Generate PowerPoint presentation
 const generatePpt = async (req, res) => {
   try {
-    
     let { slides, template } = {
       slides : [
         {
@@ -189,7 +193,7 @@ const generatePpt = async (req, res) => {
         {
             "title": "Trigonometric Ratios and Identities",
             "sub_title": "Practical Applications",
-            "content": "<p>The sine, cosine, and tangent functions are used to find unknown sides and angles in right triangles.<br> Example Identity: <span class=\"ql-custom-formula\" data-value=\"\\sin^2 \\theta + \\cos^2 \\theta = 1\">﻿<span contenteditable=\"false\"><span class=\"katex\"><span class=\"katex-mathml\"><math><semantics><mrow><msup><mi>sin</mi><mn>2</mn></msup><mi>θ</mi><mo>+</mo><msup><mi>cos</mi><mn>2</mn></msup><mi>θ</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding=\"application/x-tex\">\\sin^2 \\theta + \\cos^2 \\theta = 1</annotation></semantics></math></span><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"strut\" style=\"height: 0.871868em;\"></span><span class=\"strut bottom\" style=\"height: 0.955198em; vertical-align: -0.08333em;\"></span><span class=\"base\"><span class=\"mop\"><span class=\"mop\">sin</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height: 0.871868em;\"><span class=\"\" style=\"top: -3.12076em; margin-right: 0.05em;\"><span class=\"pstrut\" style=\"height: 2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathrm mtight\">2</span></span></span></span></span></span></span></span><span class=\"mord mathit\" style=\"margin-right: 0.02778em;\">θ</span><span class=\"mbin\">+</span><span class=\"mop\"><span class=\"mop\">cos</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height: 0.814108em;\"><span class=\"\" style=\"top: -3.063em; margin-right: 0.05em;\"><span class=\"pstrut\" style=\"height: 2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathrm mtight\">2</span></span></span></span></span></span></span></span><span class=\"mord mathit\" style=\"margin-right: 0.02778em;\">θ</span><span class=\"mrel\">=</span><span class=\"mord mathrm\">1</span></span></span></span></span>﻿</span> This identity is fundamental in trigonometry and helps simplify complex equations.</p>"
+            "content": "<p>The sine, cosine, and tangent functions are used to find unknown sides and angles in right triangles. Example Identity: <span class=\"ql-custom-formula\" data-value=\"\\sin^2 \\theta + \\cos^2 \\theta = 1\">﻿<span contenteditable=\"false\"><span class=\"katex\"><span class=\"katex-mathml\"><math><semantics><mrow><msup><mi>sin</mi><mn>2</mn></msup><mi>θ</mi><mo>+</mo><msup><mi>cos</mi><mn>2</mn></msup><mi>θ</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding=\"application/x-tex\">\\sin^2 \\theta + \\cos^2 \\theta = 1</annotation></semantics></math></span><span class=\"katex-html\" aria-hidden=\"true\"><span class=\"strut\" style=\"height: 0.871868em;\"></span><span class=\"strut bottom\" style=\"height: 0.955198em; vertical-align: -0.08333em;\"></span><span class=\"base\"><span class=\"mop\"><span class=\"mop\">sin</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height: 0.871868em;\"><span class=\"\" style=\"top: -3.12076em; margin-right: 0.05em;\"><span class=\"pstrut\" style=\"height: 2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathrm mtight\">2</span></span></span></span></span></span></span></span><span class=\"mord mathit\" style=\"margin-right: 0.02778em;\">θ</span><span class=\"mbin\">+</span><span class=\"mop\"><span class=\"mop\">cos</span><span class=\"msupsub\"><span class=\"vlist-t\"><span class=\"vlist-r\"><span class=\"vlist\" style=\"height: 0.814108em;\"><span class=\"\" style=\"top: -3.063em; margin-right: 0.05em;\"><span class=\"pstrut\" style=\"height: 2.7em;\"></span><span class=\"sizing reset-size6 size3 mtight\"><span class=\"mord mathrm mtight\">2</span></span></span></span></span></span></span></span><span class=\"mord mathit\" style=\"margin-right: 0.02778em;\">θ</span><span class=\"mrel\">=</span><span class=\"mord mathrm\">1</span></span></span></span></span>﻿</span> This identity is fundamental in trigonometry and helps simplify complex equations.</p>"
         }
     ],
       template: {
@@ -198,7 +202,7 @@ const generatePpt = async (req, res) => {
         theme: "Times New Roman",
       },
     };
-
+    
     slides.forEach((slide) => {
       slide.content = processContent(slide.content);
     });
@@ -208,11 +212,17 @@ const generatePpt = async (req, res) => {
     for (const slideData of slides) {
       const slide = pptx.addSlide();
 
-      slide.background = { path: template.image_path };
+      // Convert the URL to a Base64-encoded string
+      const base64Image = await getBase64FromUrl(template.image_path);
+
+      // Set the slide background using the base64 image
+      slide.background = { data: base64Image };
+
+      // slide.background = { path: template.image_path };
 
       slide.addText(slideData.title, {
-        x: 0.5,
-        y: 0.8,
+        x: LEFT_MARGIN,
+        y: 1.2,
         fontSize: 24,
         bold: true,
         fontFace: template.font_family,
@@ -220,8 +230,8 @@ const generatePpt = async (req, res) => {
 
       if (slideData.sub_title) {
         slide.addText(slideData.sub_title, {
-          x: 0.5,
-          y: 1.3,
+          x: LEFT_MARGIN,
+          y: 1.7,
           fontSize: 18,
           fontFace: template.font_family,
           italic: true,
@@ -239,7 +249,7 @@ const generatePpt = async (req, res) => {
 
       const LINE_HEIGHT = 0.35; // Standard line height
       const SERIES_BREAK_SPACING = 0.45; // Reduced spacing for series break
-      var IMAGE_BASELINE_OFFSET = 0.03;
+      var IMAGE_BASELINE_OFFSET = 0.04;
       const MAX_INLINE_SPACE = SLIDE_WIDTH - LEFT_MARGIN * 2;
       let yPosition = slideData.sub_title ? 2.2 : 1.9; // Start position, accounting for title/subtitle
 
@@ -253,7 +263,6 @@ const generatePpt = async (req, res) => {
         const hasImage = seriesContent.some((part) => part.type === "image");
 
         for (let i = 0; i < seriesContent.length; i++) {
-
           const part = seriesContent[i];
           const nextPart = seriesContent[i + 1]; // Look ahead to the next part
 
@@ -261,7 +270,7 @@ const generatePpt = async (req, res) => {
             if (part.type === "text") {
               // Append two whitespaces if the next part is an image
               if (nextPart && nextPart.type === "image") {
-                part.value += "  ";
+                part.value += " ";
               }
 
               const words = part.value.split(" ");
@@ -296,74 +305,80 @@ const generatePpt = async (req, res) => {
               const imageWidth = part.width;
               const imageHeight = part.height;
 
-              if (xPosition + imageWidth > MAX_INLINE_SPACE) {
+              // Define minimum dimensions
+              const minImgWidthInches = 0.22; // Minimum image width in inches
+              const imgAspectRatio = imageWidth / imageHeight;
+
+              // Apply minimum size while preserving aspect ratio
+              const finalWidthInches = Math.max(imageWidth, minImgWidthInches);
+              const finalHeightInches = finalWidthInches / imgAspectRatio;
+
+              const finalImgWidth = Math.min(
+                finalWidthInches,
+                MAX_INLINE_SPACE - xPosition
+              );
+              const finalImgHeight =
+                finalWidthInches < imageWidth ? finalHeightInches : imageHeight;
+
+              if (xPosition + finalImgWidth > MAX_INLINE_SPACE) {
                 // Move to the next line if the image doesn't fit
                 xPosition = LEFT_MARGIN;
                 yPosition += LINE_HEIGHT + IMAGE_TEXT_SPACING;
               }
 
               if (part.height < 0.2) {
-                IMAGE_BASELINE_OFFSET = 0.07;
+                IMAGE_BASELINE_OFFSET = 0.12;
               }
 
               slide.addImage({
                 data: `data:image/png;base64,${part.value.toString("base64")}`,
                 x: xPosition,
                 y: yPosition + IMAGE_BASELINE_OFFSET,
-                w: imageWidth,
-                h: imageHeight,
+                w: finalImgWidth,
+                h: finalImgHeight,
               });
 
-              xPosition += imageWidth + IMAGE_TEXT_SPACING;
+              // Check the next part for a-z or A-Z
+              const nextPart = seriesContent[i + 1];
+              let spacing = IMAGE_TEXT_SPACING;
+
+              if (nextPart && nextPart.type === "text") {
+                const nextChar = nextPart.value.trim().charAt(0); // Get the first character of the next text
+                if (/[.)]/.test(nextChar)) {
+                  spacing = -0.05; // Use tighter spacing if next character is '.' or ')'
+                } else {
+                  spacing = 0.1; // Use normal spacing otherwise
+                }
+              }
+            
+              // Update xPosition with the calculated spacing
+              xPosition += imageWidth + spacing;
+
+              // xPosition += finalImgWidth + IMAGE_TEXT_SPACING;
             }
           } else {
-            if (part.type === "image") {
-              const imageWidth = part.width;
-              const imageHeight = part.height;
+            const textWidth = part.value.length * 0.1; // Estimate text width (adjust as needed)
 
-              // If the image doesn't fit horizontally, wrap to a new line
-              if (xPosition + imageWidth > MAX_INLINE_SPACE) {
-                xPosition = LEFT_MARGIN; // Reset xPosition for new line
-                yPosition += currentLineHeight; // Move yPosition down for the new line
-                currentLineHeight = 0; // Reset current line height
-              }
-
-              // Add the image to the slide
-              slide.addImage({
-                data: `data:image/png;base64,${part.value.toString("base64")}`,
-                x: xPosition,
-                y: yPosition,
-                w: imageWidth,
-                h: imageHeight,
-              });
-
-              // Update cursor position and current line height
-              xPosition += imageWidth + IMAGE_TEXT_SPACING; // Move xPosition for the next content
-              currentLineHeight = Math.max(currentLineHeight, imageHeight); // Adjust current line height
-            } else if (part.type === "text") {
-              const textWidth = part.value.length * 0.1; // Estimate text width (adjust as needed)
-
-              // If the text doesn't fit horizontally, wrap to a new line
-              if (xPosition + textWidth > MAX_INLINE_SPACE) {
-                xPosition = LEFT_MARGIN; // Reset xPosition for new line
-                yPosition += currentLineHeight; // Move yPosition down for the new line
-                currentLineHeight = 0; // Reset current line height
-              }
-
-              // Add the text to the slide
-              slide.addText(part.value, {
-                x: xPosition,
-                y: yPosition,
-                fontSize: FONT_SIZE,
-                fontFace: template.font_family,
-                color: "000000",
-                align: "left",
-              });
-
-              // Update cursor position and current line height
-              xPosition += textWidth + 0.15; // Add small spacing between text and next content
-              currentLineHeight = Math.max(currentLineHeight, LINE_HEIGHT); // Adjust current line height
+            // If the text doesn't fit horizontally, wrap to a new line
+            if (xPosition + textWidth > MAX_INLINE_SPACE) {
+              xPosition = LEFT_MARGIN; // Reset xPosition for new line
+              yPosition += currentLineHeight; // Move yPosition down for the new line
+              currentLineHeight = 0; // Reset current line height
             }
+
+            // Add the text to the slide
+            slide.addText(part.value, {
+              x: xPosition,
+              y: yPosition + 0.2,
+              fontSize: FONT_SIZE,
+              fontFace: template.font_family,
+              color: "000000",
+              align: "left",
+            });
+
+            // Update cursor position and current line height
+            xPosition += textWidth + 0.15; // Add small spacing between text and next content
+            currentLineHeight = Math.max(currentLineHeight, LINE_HEIGHT); // Adjust current line height
           }
         }
 
